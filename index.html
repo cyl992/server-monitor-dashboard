@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>服务器监控数据大屏 </title>
+    <!-- 外部资源 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-dark-5@1.1.3/dist/css/bootstrap-dark.min.css">
+    <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    
+    <style>
+        :root {
+            --bg-main: #050a1a; /* 深空黑背景 */
+            --bg-card: #0f1c3d; /* 卡片背景（深蓝灰） */
+            --bg-highlight: rgba(30, 144, 255, 0.1); /* 高亮区域背景 */
+            --border: #1e3a8a; /* 边框（深蓝色） */
+            --text-primary: #e0f7fa; /* 主文本（亮青） */
+            --text-secondary: #94a3b8; /* 次要文本 */
+            --accent-blue: #38bdf8; /* 强调蓝（亮青蓝） */
+            --accent-green: #22c55e; /* 正常绿 */
+            --accent-yellow: #f59e0b; /* 警告黄 */
+            --accent-red: #ef4444; /* 告警红 */
+            --glow: 0 0 10px rgba(56, 189, 248, 0.5); /* 发光效果 */
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Segoe UI", "Roboto", "Ubuntu", sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(30, 144, 255, 0.1) 0%, transparent 20%),
+                radial-gradient(circle at 90% 80%, rgba(30, 144, 255, 0.1) 0%, transparent 20%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        /* 页面容器 - 网格布局适配大屏 */
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: auto auto 1fr auto;
+            gap: 1.2rem;
+            max-width: 2400px;
+            margin: 0 auto;
+        }
+
+        /* 标题区域 */
+        .dashboard-header {
+            grid-column: 1 / 13;
+            text-align: center;
+            padding: 1rem 0;
+            position: relative;
+        }
+
+        .dashboard-header h1 {
+            font-size: 2.2rem;
+            color: var(--accent-blue);
+            text-shadow: var(--glow);
+            margin: 0;
+        }
+
+        .system-status {
+            position: absolute;
+            top: 1.5rem;
+            right: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .status-indicator {
+            width: 0.8rem;
+            height: 0.8rem;
+            border-radius: 50%;
+            background-color: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+
+        /* 卡片组件 - 带科技感边框 */
+        .dashboard-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 0.8rem;
+            padding: 1.2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .dashboard-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-blue), transparent);
+        }
+
+        .card-title {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin-bottom: 1rem;
+            color: var(--accent-blue);
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .card-title i {
+            font-size: 1.3rem;
+        }
+
+        /* 核心指标卡片 - 大字体突出显示 */
+        .metrics-overview {
+            grid-column: 1 / 13;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .metric-card {
+            background-color: var(--bg-highlight);
+            border-radius: 0.6rem;
+            padding: 1rem;
+            text-align: center;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--glow);
+        }
+
+        .metric-value {
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin: 0.5rem 0;
+            font-family: "Consolas", monospace;
+        }
+
+        .metric-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* 图表容器 */
+        .chart-container {
+            width: 100%;
+            height: 100%;
+            min-height: 300px;
+        }
+
+        /* 网格布局分配 */
+        .host-management { grid-column: 1 / 5; }
+        .realtime-monitor { grid-column: 5 / 13; }
+        .cpu-mem-charts { grid-column: 1 / 8; }
+        .disk-net-charts { grid-column: 8 / 13; }
+        .alerts-section { grid-column: 1 / 7; }
+        .history-section { grid-column: 7 / 13; }
+
+        /* 表格样式 */
+        .data-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-top: 1rem;
+        }
+
+        .data-table th {
+            background-color: rgba(56, 189, 248, 0.1);
+            color: var(--accent-blue);
+            padding: 0.8rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .data-table td {
+            padding: 0.8rem 1rem;
+            border-bottom: 1px solid rgba(30, 58, 138, 0.3);
+        }
+
+        .data-table tr:hover {
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        /* 表单元素 */
+        .form-control {
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 0.4rem;
+            padding: 0.6rem 0.8rem;
+            transition: all 0.3s;
+        }
+
+        .form-control:focus {
+            border-color: var(--accent-blue);
+            box-shadow: var(--glow);
+            background-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .btn {
+            border-radius: 0.4rem;
+            padding: 0.6rem 1.2rem;
+            font-weight: 600;
+            transition: all 0.3s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background-color: var(--accent-blue);
+            color: var(--bg-main);
+        }
+
+        .btn-primary:hover {
+            background-color: #7dd3fc;
+            box-shadow: var(--glow);
+        }
+
+        .btn-danger {
+            background-color: var(--accent-red);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background-color: #f87171;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+        }
+
+        /* 告警样式 */
+        .alert-item {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.8rem;
+            border-left: 3px solid;
+            background-color: rgba(239, 68, 68, 0.05);
+            border-color: var(--accent-red);
+            animation: alert-pulse 2s infinite;
+        }
+
+        .alert-item.warning {
+            background-color: rgba(245, 158, 11, 0.05);
+            border-color: var(--accent-yellow);
+            animation: none;
+        }
+
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.3rem;
+            font-weight: 600;
+        }
+
+        .alert-time {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        @keyframes alert-pulse {
+            0% { background-color: rgba(239, 68, 68, 0.05); }
+            50% { background-color: rgba(239, 68, 68, 0.1); }
+            100% { background-color: rgba(239, 68, 68, 0.05); }
+        }
+
+        /* 告警阈值设置 */
+        .threshold-config {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px dashed var(--border);
+        }
+
+        .threshold-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .threshold-label {
+            width: 80px;
+            font-size: 0.9rem;
+        }
+
+        .threshold-input {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .threshold-input input {
+            width: 80px;
+        }
+
+        /* 历史查询区域 */
+        .history-controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .history-controls > div {
+            flex: 1;
+            min-width: 150px;
+        }
+
+        /* 响应式布局调整 */
+        @media (max-width: 1200px) {
+            .cpu-mem-charts, .disk-net-charts { grid-column: 1 / 13; }
+            .alerts-section, .history-section { grid-column: 1 / 13; }
+        }
+
+        @media (max-width: 768px) {
+            .host-management, .realtime-monitor { grid-column: 1 / 13; }
+            .dashboard-header h1 { font-size: 1.8rem; }
+            .system-status { position: static; margin-top: 1rem; justify-content: center; }
+            .metric-value { font-size: 1.8rem; }
+        }
+
+        /* 加载动画 */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(56, 189, 248, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--accent-blue);
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 数据状态标签 */
+        .status-badge {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .status-normal { background-color: rgba(34, 197, 94, 0.2); color: var(--accent-green); }
+        .status-warning { background-color: rgba(245, 158, 11, 0.2); color: var(--accent-yellow); }
+        .status-alert { background-color: rgba(239, 68, 68, 0.2); color: var(--accent-red); }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- 标题区域 -->
+        <div class="dashboard-header">
+            <h1><i class="bi bi-server"></i> 服务器监控数据大屏</h1>
+            <div class="system-status">
+                <span class="status-indicator"></span>
+                <span>系统运行中 | 上次更新: <span id="last-update">加载中...</span></span>
+            </div>
+        </div>
+
+        <!-- 核心指标概览 -->
+        <div class="metrics-overview dashboard-card">
+            <div class="metric-card">
+                <div class="metric-label">在线主机数</div>
+                <div class="metric-value" id="total-hosts">0</div>
+                <div class="text-secondary"><i class="bi bi-globe"></i> 台服务器</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">平均CPU使用率</div>
+                <div class="metric-value" id="avg-cpu">0%</div>
+                <div class="text-secondary"><i class="bi bi-microchip"></i> 实时计算</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">平均内存使用率</div>
+                <div class="metric-value" id="avg-mem">0%</div>
+                <div class="text-secondary"><i class="bi bi-memory"></i> 实时计算</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">当前告警数</div>
+                <div class="metric-value" id="alert-count">0</div>
+                <div class="text-secondary"><i class="bi bi-exclamation-triangle"></i> 未处理</div>
+            </div>
+        </div>
+
+        <!-- 主机管理 -->
+        <div class="dashboard-card host-management">
+            <div class="card-title">
+                <i class="bi bi-gear"></i> 主机管理
+            </div>
+            <form id="add-host-form" class="row g-3">
+                <div class="col-12">
+                    <input type="text" name="ip" class="form-control" placeholder="主机IP（必填）" required>
+                </div>
+                <div class="col-6">
+                    <input type="text" name="user" class="form-control" placeholder="SSH用户名" required>
+                </div>
+                <div class="col-6">
+                    <input type="password" name="pwd" class="form-control" placeholder="SSH密码" required>
+                </div>
+                <div class="col-6">
+                    <input type="number" name="port" class="form-control" placeholder="SSH端口" value="22" min="1" max="65535">
+                </div>
+                <div class="col-6">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-plus-circle"></i> 添加主机
+                    </button>
+                </div>
+            </form>
+
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>主机IP</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="hosts-table"></tbody>
+            </table>
+        </div>
+
+        <!-- 实时监控数据 -->
+        <div class="dashboard-card realtime-monitor">
+            <div class="card-title">
+                <i class="bi bi-clock-history"></i> 实时监控数据
+                <span class="text-secondary ms-auto" style="font-size: 0.9rem;">
+                    <span class="loading"></span> 每5秒刷新
+                </span>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>主机IP</th>
+                        <th>CPU使用率</th>
+                        <th>内存使用率</th>
+                        <th>磁盘使用率</th>
+                        <th>网络带宽</th>
+                        <th>采集时间</th>
+                    </tr>
+                </thead>
+                <tbody id="metrics-table"></tbody>
+            </table>
+        </div>
+
+        <!-- CPU/内存趋势图表 -->
+        <div class="dashboard-card cpu-mem-charts">
+            <div class="card-title">
+                <i class="bi bi-graph-up"></i> CPU/内存趋势分析
+            </div>
+            <div class="mb-3">
+                <select id="chart-host-select" class="form-control">
+                    <option value="">选择主机查看趋势</option>
+                </select>
+            </div>
+            <div class="chart-container" id="cpu-trend-chart"></div>
+            <div class="chart-container mt-4" id="mem-trend-chart"></div>
+        </div>
+
+        <!-- 磁盘/网络图表 -->
+        <div class="dashboard-card disk-net-charts">
+            <div class="card-title">
+                <i class="bi bi-hdd-network"></i> 磁盘/网络监控
+            </div>
+            <div class="chart-container" id="disk-chart"></div>
+            <div class="chart-container mt-4" id="net-chart"></div>
+        </div>
+
+        <!-- 告警信息 -->
+        <div class="dashboard-card alerts-section">
+            <div class="card-title">
+                <i class="bi bi-exclamation-circle"></i> 告警信息
+            </div>
+            
+            <div class="threshold-config">
+                <h5 class="mb-3">告警阈值设置</h5>
+                <div class="threshold-item">
+                    <div class="threshold-label">CPU告警</div>
+                    <div class="threshold-input">
+                        <input type="number" id="cpu-threshold" class="form-control" value="80" min="1" max="100">
+                        <span>%</span>
+                    </div>
+                </div>
+                <div class="threshold-item">
+                    <div class="threshold-label">内存告警</div>
+                    <div class="threshold-input">
+                        <input type="number" id="mem-threshold" class="form-control" value="90" min="1" max="100">
+                        <span>%</span>
+                    </div>
+                </div>
+                <div class="threshold-item">
+                    <div class="threshold-label">磁盘告警</div>
+                    <div class="threshold-input">
+                        <input type="number" id="disk-threshold" class="form-control" value="90" min="1" max="100">
+                        <span>%</span>
+                    </div>
+                </div>
+                <button id="save-threshold" class="btn btn-primary">
+                    <i class="bi bi-save"></i> 保存设置
+                </button>
+            </div>
+
+            <div id="alerts-container" class="mt-4"></div>
+        </div>
+
+        <!-- 历史数据查询 -->
+        <div class="dashboard-card history-section">
+            <div class="card-title">
+                <i class="bi bi-calendar-week"></i> 历史数据查询
+            </div>
+            <div class="history-controls">
+                <div>
+                    <select id="history-ip" class="form-control" required>
+                        <option value="">选择主机IP</option>
+                    </select>
+                </div>
+                <div>
+                    <input type="date" id="history-start" class="form-control" required>
+                </div>
+                <div>
+                    <input type="date" id="history-end" class="form-control" required>
+                </div>
+                <div style="min-width: 120px;">
+                    <button onclick="queryHistory()" class="btn btn-primary w-100">
+                        <i class="bi bi-search"></i> 查询
+                    </button>
+                </div>
+                <div style="min-width: 120px;">
+                    <button onclick="exportHistory()" class="btn btn-primary w-100">
+                        <i class="bi bi-download"></i> 导出
+                    </button>
+                </div>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>主机IP</th>
+                        <th>CPU使用率</th>
+                        <th>内存使用率</th>
+                        <th>磁盘使用率</th>
+                        <th>采集时间</th>
+                    </tr>
+                </thead>
+                <tbody id="history-table"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let metricsHistory = {}; // 存储历史趋势数据 {ip: {cpu: [], time: []}}
+        let currentThresholds = { cpu: 80, mem: 90, disk: 90 }; // 默认阈值
+
+        // 初始化图表
+        const cpuTrendChart = echarts.init(document.getElementById('cpu-trend-chart'));
+        const memTrendChart = echarts.init(document.getElementById('mem-trend-chart'));
+        const diskChart = echarts.init(document.getElementById('disk-chart'));
+        const netChart = echarts.init(document.getElementById('net-chart'));
+
+        // 1. 初始化页面
+        window.onload = function() {
+            // 设置默认日期（最近7天）
+            const today = new Date();
+            const lastWeek = new Date(today);
+            lastWeek.setDate(today.getDate() - 7);
+            document.getElementById('history-start').valueAsDate = lastWeek;
+            document.getElementById('history-end').valueAsDate = today;
+
+            // 加载数据
+            loadHosts();
+            loadMetrics();
+            loadAlerts();
+
+            // 定时刷新（5秒）
+            setInterval(() => {
+                loadMetrics();
+                loadAlerts();
+                updateLastUpdateTime();
+            }, 5000);
+
+            // 绑定事件
+            document.getElementById('add-host-form').addEventListener('submit', addHost);
+            document.getElementById('save-threshold').addEventListener('click', saveThresholds);
+            document.getElementById('chart-host-select').addEventListener('change', updateTrendCharts);
+
+            // 窗口大小变化时重绘图表
+            window.addEventListener('resize', () => {
+                cpuTrendChart.resize();
+                memTrendChart.resize();
+                diskChart.resize();
+                netChart.resize();
+            });
+        };
+
+        // 2. 加载主机列表
+        function loadHosts() {
+            fetch('/get_hosts').then(res => res.json()).then(hosts => {
+                const hostsTable = document.getElementById('hosts-table');
+                const historyIpSelect = document.getElementById('history-ip');
+                const chartHostSelect = document.getElementById('chart-host-select');
+                
+                hostsTable.innerHTML = '';
+                chartHostSelect.innerHTML = '<option value="">选择主机查看趋势</option>';
+                
+                hosts.forEach(host => {
+                    // 渲染主机列表
+                    hostsTable.innerHTML += `
+                        <tr>
+                            <td>${host.ip}</td>
+                            <td><span class="status-badge status-normal">在线</span></td>
+                            <td>
+                                <button onclick="deleteHost('${host.ip}')" class="btn btn-danger btn-sm">
+                                    <i class="bi bi-trash"></i> 删除
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                    
+                    // 填充历史查询和图表的主机选择框
+                    historyIpSelect.innerHTML += `<option value="${host.ip}">${host.ip}</option>`;
+                    chartHostSelect.innerHTML += `<option value="${host.ip}">${host.ip}</option>`;
+
+                    // 初始化历史趋势数据存储
+                    if (!metricsHistory[host.ip]) {
+                        metricsHistory[host.ip] = {
+                            cpu: [],
+                            mem: [],
+                            disk: [],
+                            net: [],
+                            time: []
+                        };
+                    }
+                });
+
+                // 更新在线主机数
+                document.getElementById('total-hosts').textContent = hosts.length;
+            });
+        }
+
+        // 3. 添加主机
+        function addHost(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+
+            fetch('/add_host', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams(data)
+            }).then(() => {
+                loadHosts();
+                e.target.reset(); // 重置表单
+            });
+        }
+
+        // 4. 删除主机
+        function deleteHost(ip) {
+            if (confirm(`确定删除主机 ${ip} 吗？`)) {
+                fetch(`/delete_host?ip=${ip}`).then(() => {
+                    loadHosts();
+                    delete metricsHistory[ip]; // 清除历史数据
+                });
+            }
+        }
+
+        // 5. 加载实时监控数据
+        function loadMetrics() {
+            fetch('/get_metrics').then(res => res.json()).then(metrics => {
+                const metricsTable = document.getElementById('metrics-table');
+                metricsTable.innerHTML = '';
+
+                let totalCpu = 0, totalMem = 0, validCount = 0;
+
+                metrics.forEach(item => {
+                    // 计算平均值
+                    if (item.cpu !== "连接失败") {
+                        totalCpu += parseFloat(item.cpu);
+                        totalMem += parseFloat(item.mem);
+                        validCount++;
+                    }
+
+                    // 状态标签样式
+                    const cpuStatus = getStatusClass(parseFloat(item.cpu), currentThresholds.cpu);
+                    const memStatus = getStatusClass(parseFloat(item.mem), currentThresholds.mem);
+                    const diskStatus = getStatusClass(parseFloat(item.disk || 0), currentThresholds.disk);
+
+                    // 渲染表格
+                    metricsTable.innerHTML += `
+                        <tr>
+                            <td>${item.ip}</td>
+                            <td><span class="status-badge ${cpuStatus}">${item.cpu}</span></td>
+                            <td><span class="status-badge ${memStatus}">${item.mem}</span></td>
+                            <td><span class="status-badge ${diskStatus}">${item.disk || '--'}</span></td>
+                            <td>${item.net || '--'}</td>
+                            <td>${item.time}</td>
+                        </tr>
+                    `;
+
+                    // 存储趋势数据（保留最近30条）
+                    if (metricsHistory[item.ip]) {
+                        const history = metricsHistory[item.ip];
+                        history.cpu.push(parseFloat(item.cpu) || 0);
+                        history.mem.push(parseFloat(item.mem) || 0);
+                        history.disk.push(parseFloat(item.disk) || 0);
+                        history.net.push(parseFloat(item.net) || 0);
+                        history.time.push(item.time.split(' ')[1]); // 只保留时间
+
+                        // 超过30条则删除最早的
+                        if (history.time.length > 30) {
+                            Object.keys(history).forEach(key => history[key].shift());
+                        }
+                    }
+                });
+
+                // 更新平均指标
+                if (validCount > 0) {
+                    document.getElementById('avg-cpu').textContent = (totalCpu / validCount).toFixed(1) + '%';
+                    document.getElementById('avg-mem').textContent = (totalMem / validCount).toFixed(1) + '%';
+                }
+
+                // 如果已选择主机，更新趋势图表
+                const selectedIp = document.getElementById('chart-host-select').value;
+                if (selectedIp) updateTrendCharts();
+                updateDiskNetCharts(metrics);
+            });
+        }
+
+        // 6. 更新趋势图表
+        function updateTrendCharts() {
+            const ip = document.getElementById('chart-host-select').value;
+            if (!ip || !metricsHistory[ip]) return;
+
+            const history = metricsHistory[ip];
+            const chartStyle = {
+                tooltip: { trigger: 'axis' },
+                grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                xAxis: { type: 'category', data: history.time, axisLine: { lineStyle: { color: '#94a3b8' } } },
+                yAxis: { 
+                    type: 'value', 
+                    max: 100,
+                    axisLine: { lineStyle: { color: '#94a3b8' } },
+                    splitLine: { lineStyle: { color: 'rgba(30, 58, 138, 0.3)' } }
+                },
+                series: [{
+                    data: history.cpu,
+                    type: 'line',
+                    smooth: true,
+                    lineStyle: { width: 3 },
+                    itemStyle: { radius: 4 },
+                    areaStyle: { opacity: 0.2 }
+                }]
+            };
+
+            // CPU趋势图
+            cpuTrendChart.setOption({
+                ...chartStyle,
+                title: { text: `${ip} - CPU使用率趋势`, textStyle: { color: '#e0f7fa' } },
+                series: [{
+                    ...chartStyle.series[0],
+                    data: history.cpu,
+                    name: 'CPU使用率（%）',
+                    lineStyle: { color: '#38bdf8' },
+                    itemStyle: { color: '#38bdf8' },
+                    areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#38bdf8' }, { offset: 1, color: 'transparent' }] } }
+                }]
+            });
+
+            // 内存趋势图
+            memTrendChart.setOption({
+                ...chartStyle,
+                title: { text: `${ip} - 内存使用率趋势`, textStyle: { color: '#e0f7fa' } },
+                series: [{
+                    ...chartStyle.series[0],
+                    data: history.mem,
+                    name: '内存使用率（%）',
+                    lineStyle: { color: '#22c55e' },
+                    itemStyle: { color: '#22c55e' },
+                    areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#22c55e' }, { offset: 1, color: 'transparent' }] } }
+                }]
+            });
+        }
+
+        // 7. 更新磁盘/网络图表
+        function updateDiskNetCharts(metrics) {
+            // 磁盘使用率饼图
+            const diskData = metrics.filter(m => m.disk && m.disk !== '连接失败').map(m => ({
+                name: m.ip,
+                value: parseFloat(m.disk)
+            }));
+
+            diskChart.setOption({
+                title: { text: '磁盘使用率分布', textStyle: { color: '#e0f7fa' } },
+                tooltip: { trigger: 'item' },
+                legend: { 
+                    orient: 'vertical', 
+                    left: 10,
+                    textStyle: { color: '#e0f7fa' }
+                },
+                series: [{
+                    name: '磁盘使用率',
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    avoidLabelOverlap: false,
+                    itemStyle: {
+                        borderRadius: 10,
+                        borderColor: '#0f1c3d',
+                        borderWidth: 2
+                    },
+                    label: { show: false, position: 'center' },
+                    emphasis: {
+                        label: { show: true, fontSize: 16, fontWeight: 'bold' }
+                    },
+                    labelLine: { show: false },
+                    data: diskData
+                }]
+            });
+
+            // 网络带宽柱状图
+            const netData = metrics.filter(m => m.net && m.net !== '连接失败').map(m => ({
+                name: m.ip,
+                value: parseFloat(m.net)
+            }));
+
+            netChart.setOption({
+                title: { text: '网络带宽使用（Mbps）', textStyle: { color: '#e0f7fa' } },
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                xAxis: { 
+                    type: 'category', 
+                    data: netData.map(d => d.name),
+                    axisLine: { lineStyle: { color: '#94a3b8' } }
+                },
+                yAxis: { 
+                    type: 'value',
+                    axisLine: { lineStyle: { color: '#94a3b8' } },
+                    splitLine: { lineStyle: { color: 'rgba(30, 58, 138, 0.3)' } }
+                },
+                series: [{
+                    name: '带宽（Mbps）',
+                    type: 'bar',
+                    barWidth: '60%',
+                    data: netData.map(d => d.value),
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: '#38bdf8' },
+                            { offset: 1, color: '#1e40af' }
+                        ])
+                    }
+                }]
+            });
+        }
+
+        // 8. 加载告警信息
+        function loadAlerts() {
+            fetch('/get_alerts?thresholds=' + JSON.stringify(currentThresholds)).then(res => res.json()).then(alerts => {
+                const alertsContainer = document.getElementById('alerts-container');
+                alertsContainer.innerHTML = '';
+
+                // 更新告警计数
+                document.getElementById('alert-count').textContent = alerts.length;
+
+                if (alerts.length === 0) {
+                    alertsContainer.innerHTML = '<div class="alert-item warning"><div class="alert-header">暂无告警</div><div>所有指标均在正常范围内</div></div>';
+                    return;
+                }
+
+                // 按时间倒序显示（最新的在前）
+                alerts.slice(-10).reverse().forEach(alert => {
+                    const isWarning = alert.level === 'warning';
+                    alertsContainer.innerHTML += `
+                        <div class="alert-item ${isWarning ? 'warning' : ''}">
+                            <div class="alert-header">
+                                <span>${alert.type} - 主机 ${alert.ip}</span>
+                                <span class="alert-time">${alert.time}</span>
+                            </div>
+                            <div>当前值：${alert.value}，阈值：${alert.threshold}%</div>
+                        </div>
+                    `;
+                });
+            });
+        }
+
+        // 9. 保存告警阈值
+        function saveThresholds() {
+            currentThresholds = {
+                cpu: parseInt(document.getElementById('cpu-threshold').value) || 80,
+                mem: parseInt(document.getElementById('mem-threshold').value) || 90,
+                disk: parseInt(document.getElementById('disk-threshold').value) || 90
+            };
+            // 保存到后端（实际项目中可调用接口持久化）
+            localStorage.setItem('monitor_thresholds', JSON.stringify(currentThresholds));
+            loadAlerts(); // 立即生效
+            alert('阈值设置已保存');
+        }
+
+        // 10. 历史数据查询
+        function queryHistory() {
+            const ip = document.getElementById('history-ip').value;
+            const start = document.getElementById('history-start').value;
+            const end = document.getElementById('history-end').value;
+
+            if (!ip || !start || !end) {
+                alert('请填写完整查询条件');
+                return;
+            }
+
+            fetch('/get_history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `ip=${ip}&start_time=${start}&end_time=${end}`
+            }).then(res => res.json()).then(data => {
+                const historyTable = document.querySelector('#history-table tbody');
+                historyTable.innerHTML = '';
+
+                if (data.length === 0) {
+                    historyTable.innerHTML = '<tr><td colspan="5" class="text-center">暂无数据</td></tr>';
+                    return;
+                }
+
+                data.forEach(item => {
+                    historyTable.innerHTML += `
+                        <tr>
+                            <td>${item.ip}</td>
+                            <td>${item.cpu}</td>
+                            <td>${item.mem}</td>
+                            <td>${item.disk || '--'}</td>
+                            <td>${item.time}</td>
+                        </tr>
+                    `;
+                });
+            });
+        }
+
+        // 11. 导出历史数据
+        function exportHistory() {
+            const ip = document.getElementById('history-ip').value;
+            const start = document.getElementById('history-start').value;
+            if (!ip || !start) {
+                alert('请选择主机和起始日期');
+                return;
+            }
+
+            // 实际项目中可调用后端接口生成CSV文件
+            alert(`正在导出 ${ip} 从 ${start} 到 ${document.getElementById('history-end').value} 的数据...`);
+        }
+
+        // 工具函数：根据值和阈值返回状态类名
+        function getStatusClass(value, threshold) {
+            if (isNaN(value)) return '';
+            if (value > threshold) return 'status-alert';
+            if (value > threshold * 0.8) return 'status-warning';
+            return 'status-normal';
+        }
+
+        // 工具函数：更新最后更新时间
+        function updateLastUpdateTime() {
+            const now = new Date();
+            document.getElementById('last-update').textContent = now.toLocaleTimeString();
+        }
+    </script>
+</body>
+</html>

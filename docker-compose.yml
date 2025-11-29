@@ -1,0 +1,12 @@
+version: '3.3'
+services:
+  monitor-dashboard:
+    build: .
+    container_name: monitor-dashboard
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    environment:
+      - FLASK_ENV=production
